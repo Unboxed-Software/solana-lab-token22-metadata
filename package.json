@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node src/index.ts"
+    "start": "ts-node src/index.ts",
+    "metadata-embedded": "ts-node src/embedded-metadata.ts",
+    "metadata-pointer": "ts-node src/metadata-with-pointer.ts"
   },
   "keywords": [],
   "author": "",
