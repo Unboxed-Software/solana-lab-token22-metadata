@@ -17,11 +17,10 @@ import {
   ExtensionType,
   getAssociatedTokenAddress,
   getMintLen,
-  getTokenMetadata,
   TOKEN_2022_PROGRAM_ID,
 } from '@solana/spl-token';
 import { getKeypairFromFile } from '@solana-developers/helpers';
-import { fromWeb3JsKeypair, fromWeb3JsPublicKey } from '@metaplex-foundation/umi-web3js-adapters';
+import { fromWeb3JsKeypair, fromWeb3JsPublicKey, toWeb3JsInstruction } from '@metaplex-foundation/umi-web3js-adapters';
 import { bundlrStorage, keypairIdentity, Metaplex, toMetaplexFile } from '@metaplex-foundation/js';
 import fs from 'fs';
 import {
@@ -37,9 +36,8 @@ import {
 } from '@metaplex-foundation/mpl-token-metadata';
 import { createSignerFromKeypair, none, percentAmount, PublicKey, signerIdentity } from '@metaplex-foundation/umi';
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
-import * as bs58 from 'bs58';
 
-const createMetadataAccountOnMetaplex = async ({
+const getCreateMetadataAccountOnMetaplexIxs = async ({
   payer,
   connection,
   mint,
@@ -47,7 +45,7 @@ const createMetadataAccountOnMetaplex = async ({
   mint: Keypair;
   payer: Keypair;
   connection: web3.Connection;
-}) => {
+}): Promise<web3.TransactionInstruction[]> => {
   const umi = createUmi('https://api.devnet.solana.com');
 
   const signer = createSignerFromKeypair(umi, fromWeb3JsKeypair(payer));
@@ -120,29 +118,9 @@ const createMetadataAccountOnMetaplex = async ({
     printSupply: none<PrintSupply>(),
   };
 
-  const txId = await createV1(umi, { ...accounts, ...data }).sendAndConfirm(umi);
-  return bs58.encode(txId.signature);
-};
-
-const removeMintAuthority = async ({
-  mint,
-  payer,
-  connection,
-}: {
-  mint: Keypair;
-  payer: Keypair;
-  connection: web3.Connection;
-}) => {
-  const setMintTokenAuthorityIx = createSetAuthorityInstruction(
-    mint.publicKey,
-    payer.publicKey,
-    AuthorityType.MintTokens,
-    null,
-    undefined,
-    TOKEN_2022_PROGRAM_ID,
-  );
-  const changeMintAuthorityTransaction = new Transaction().add(setMintTokenAuthorityIx);
-  return await sendAndConfirmTransaction(connection, changeMintAuthorityTransaction, [payer]);
+  return createV1(umi, { ...accounts, ...data })
+    .getInstructions()
+    .map((ix) => toWeb3JsInstruction(ix));
 };
 
 const getMetadataAccountAddressOnMetaplex = (mint: Keypair) => {
@@ -155,20 +133,20 @@ const getMetadataAccountAddressOnMetaplex = (mint: Keypair) => {
   return metadataPDA;
 };
 
-const createMintWithMetadataPointer = async ({
+const getCreateMintWithMetadataPointerIxs = async ({
   mint,
   payer,
   connection,
+  decimals,
 }: {
   mint: Keypair;
   payer: Keypair;
   connection: web3.Connection;
-}) => {
+  decimals: number;
+}): Promise<web3.TransactionInstruction[]> => {
   const metadataPDA = getMetadataAccountAddressOnMetaplex(mint);
 
   const mintLen = getMintLen([ExtensionType.MetadataPointer]);
-  // NFT should have 0 decimals
-  const decimals = 0;
   const lamports = await connection.getMinimumBalanceForRentExemption(mintLen);
 
   const createMintAccountIx = SystemProgram.createAccount({
@@ -195,6 +173,32 @@ const createMintWithMetadataPointer = async ({
     TOKEN_2022_PROGRAM_ID,
   );
 
+  return [createMintAccountIx, initMetadataPointerIx, initMintIx];
+};
+
+async function main() {
+  const endpoint = clusterApiUrl('devnet');
+  const connection = new Connection(endpoint, 'confirmed');
+
+  const mint = Keypair.generate();
+  const payer = await getKeypairFromFile('~/.config/solana/id.json');
+
+  // NFT should have 0 decimals
+  const decimals = 0;
+
+  const createMintIxs = await getCreateMintWithMetadataPointerIxs({
+    payer,
+    mint,
+    connection,
+    decimals,
+  });
+
+  const metadataIxs = await getCreateMetadataAccountOnMetaplexIxs({
+    payer,
+    mint,
+    connection,
+  });
+
   // we will need this to mint our NFT to it
   const ata = await getAssociatedTokenAddress(mint.publicKey, payer.publicKey, false, TOKEN_2022_PROGRAM_ID);
   const createATAIx = createAssociatedTokenAccountInstruction(
@@ -205,7 +209,7 @@ const createMintWithMetadataPointer = async ({
     TOKEN_2022_PROGRAM_ID,
   );
 
-  const mintIX = createMintToCheckedInstruction(
+  const mintIx = createMintToCheckedInstruction(
     mint.publicKey,
     ata,
     payer.publicKey,
@@ -216,46 +220,27 @@ const createMintWithMetadataPointer = async ({
     TOKEN_2022_PROGRAM_ID,
   );
 
-  const transaction = new Transaction().add(
-    createMintAccountIx,
-    initMetadataPointerIx,
-    initMintIx,
-    createATAIx,
-    mintIX,
-  );
-  return await sendAndConfirmTransaction(connection, transaction, [payer, mint]);
-};
-
-async function main() {
-  const endpoint = clusterApiUrl('devnet');
-  const connection = new Connection(endpoint, 'confirmed');
-
-  const mint = Keypair.generate();
-  const payer = await getKeypairFromFile('~/.config/solana/id.json');
-
-  const mintSig = await createMintWithMetadataPointer({
-    payer,
-    mint,
-    connection,
-  });
-  console.log(`Creating mint transaction: https://explorer.solana.com/tx/${mintSig}?cluster=devnet`);
-
-  const metadataSig = await createMetadataAccountOnMetaplex({
-    payer,
-    mint,
-    connection,
-  });
-  console.log(`Creating metadata account transaction: https://explorer.solana.com/tx/${metadataSig}?cluster=devnet`);
-
   // NFTs should have no mint authority so no one can mint any more of the same NFT
-  const removeMintAuthoritySig = await removeMintAuthority({
-    payer,
-    mint,
-    connection,
-  });
-  console.log(
-    `Removing mint authority transaction: https://explorer.solana.com/tx/${removeMintAuthoritySig}?cluster=devnet`,
+  const removeMintAuthorityIx = createSetAuthorityInstruction(
+    mint.publicKey,
+    payer.publicKey,
+    AuthorityType.MintTokens,
+    null,
+    undefined,
+    TOKEN_2022_PROGRAM_ID,
   );
+
+  // Building and confirming the transaction
+  const transaction = new Transaction().add(
+    ...createMintIxs,
+    ...metadataIxs,
+    createATAIx,
+    mintIx,
+    removeMintAuthorityIx,
+  );
+  const sig = await sendAndConfirmTransaction(connection, transaction, [payer, mint]);
+
+  console.log(`Transaction: https://explorer.solana.com/tx/${sig}?cluster=devnet`);
 }
 
 main()
