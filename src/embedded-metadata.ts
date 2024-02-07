@@ -14,7 +14,9 @@ import {
   createMintToCheckedInstruction,
   createSetAuthorityInstruction,
   ExtensionType,
+  getAccount,
   getAssociatedTokenAddress,
+  getMint,
   getMintLen,
   getTokenMetadata,
   LENGTH_SIZE,
@@ -76,7 +78,7 @@ const uploadOffChainMetadata = async ({
 };
 
 export default async function main() {
-  const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+  const connection = new Connection(clusterApiUrl('devnet'), 'finalized');
 
   const mint = Keypair.generate();
   const payer = await getKeypairFromFile('~/.config/solana/id.json');
@@ -189,9 +191,26 @@ export default async function main() {
   const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [payer, mint]);
   console.log(`Transaction: https://explorer.solana.com/tx/${transactionSignature}?cluster=devnet`);
 
-  const chainMetadata = await getTokenMetadata(connection, mint.publicKey);
+  // Now we can fetch the account and the mint and look at the details
+
+  // Fetching the account
+  const accountDetails = await getAccount(connection, ata, 'finalized', TOKEN_2022_PROGRAM_ID);
+  console.log('Associate Token Account =====>', accountDetails);
+
+  // Fetching the mint
+  const mintDetails = await getMint(connection, mint.publicKey, undefined, TOKEN_2022_PROGRAM_ID);
+  console.log('Mint =====>', mintDetails);
+
+  // Since the mint stores the metadata in itself, we can just get it like this
+  const onChainMetadata = await getTokenMetadata(connection, mint.publicKey);
   // Now we can see the metadata coming with the mint
-  console.log(chainMetadata);
+  console.log('On-chain metadata =====>', onChainMetadata);
+
+  // And we can even get the off-chain json now
+  if (onChainMetadata && onChainMetadata.uri) {
+    const offChainMetadata = await fetch(onChainMetadata.uri).then((res) => res.json());
+    console.log('Mint off-chain metadata =====>', offChainMetadata);
+  }
 }
 
 main()
