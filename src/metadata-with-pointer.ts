@@ -15,7 +15,10 @@ import {
   createMintToCheckedInstruction,
   createSetAuthorityInstruction,
   ExtensionType,
+  getAccount,
   getAssociatedTokenAddress,
+  getMetadataPointerState,
+  getMint,
   getMintLen,
   TOKEN_2022_PROGRAM_ID,
 } from '@solana/spl-token';
@@ -30,24 +33,25 @@ import {
   CreateV1InstructionAccounts,
   CreateV1InstructionData,
   Creator,
+  fetchMetadata,
   PrintSupply,
   TokenStandard,
   Uses,
 } from '@metaplex-foundation/mpl-token-metadata';
-import { createSignerFromKeypair, none, percentAmount, PublicKey, signerIdentity } from '@metaplex-foundation/umi';
+import { createSignerFromKeypair, none, percentAmount, PublicKey, signerIdentity, Umi } from '@metaplex-foundation/umi';
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
 
 const getCreateMetadataAccountOnMetaplexIxs = async ({
   payer,
   connection,
   mint,
+  umi,
 }: {
   mint: Keypair;
   payer: Keypair;
   connection: web3.Connection;
+  umi: Umi;
 }): Promise<web3.TransactionInstruction[]> => {
-  const umi = createUmi('https://api.devnet.solana.com');
-
   const signer = createSignerFromKeypair(umi, fromWeb3JsKeypair(payer));
   umi.use(signerIdentity(signer, true));
 
@@ -178,7 +182,8 @@ const getCreateMintWithMetadataPointerIxs = async ({
 
 async function main() {
   const endpoint = clusterApiUrl('devnet');
-  const connection = new Connection(endpoint, 'confirmed');
+  const connection = new Connection(endpoint, 'finalized');
+  const umi = createUmi('https://api.devnet.solana.com');
 
   const mint = Keypair.generate();
   const payer = await getKeypairFromFile('~/.config/solana/id.json');
@@ -197,6 +202,7 @@ async function main() {
     payer,
     mint,
     connection,
+    umi,
   });
 
   // we will need this to mint our NFT to it
@@ -241,6 +247,28 @@ async function main() {
   const sig = await sendAndConfirmTransaction(connection, transaction, [payer, mint]);
 
   console.log(`Transaction: https://explorer.solana.com/tx/${sig}?cluster=devnet`);
+
+  // Now we can fetch the account and the mint and look at the details
+
+  // Feting the account
+  const accountDetails = await getAccount(connection, ata, 'finalized', TOKEN_2022_PROGRAM_ID);
+  console.log('Associate Token Account =====>', accountDetails);
+
+  // Feting the mint
+  const mintDetails = await getMint(connection, mint.publicKey, undefined, TOKEN_2022_PROGRAM_ID);
+  console.log('Mint =====>', mintDetails);
+
+  // But the mint will not have the metadata by it self, we need to first get the metadata pointer
+  const metadataPointerState = getMetadataPointerState(mintDetails);
+  console.log('Mint metadata-pointer details =====>', metadataPointerState);
+
+  // Since our metadata are on Metaplex we will fetch the metadata using a helper method from metaplex SDK
+  const metadata = await fetchMetadata(umi, fromWeb3JsPublicKey(metadataPointerState!.metadataAddress!));
+  console.log('Mint metadata =====>', metadata);
+
+  // And we can even get the off-chain json now
+  const offChainMetadata = await fetch(metadata.uri).then((res) => res.json());
+  console.log('Mint off-chain metadata =====>', offChainMetadata);
 }
 
 main()
