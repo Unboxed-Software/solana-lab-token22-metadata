@@ -1,6 +1,4 @@
 import {
-  clusterApiUrl,
-  Connection,
   Keypair,
   sendAndConfirmTransaction,
   SystemProgram,
@@ -23,80 +21,31 @@ import {
   TOKEN_2022_PROGRAM_ID,
   TYPE_SIZE,
 } from '@solana/spl-token';
-import { getKeypairFromFile } from '@solana-developers/helpers';
 import {
   createInitializeInstruction,
   createUpdateFieldInstruction,
   pack,
   TokenMetadata,
 } from '@solana/spl-token-metadata';
-import { bundlrStorage, keypairIdentity, Metaplex, toMetaplexFile } from '@metaplex-foundation/js';
-import fs from 'fs';
+import { CreateNFTInputs } from './nft-helpers';
 
-const image = 'cat.jpg';
 
-const uploadOffChainMetadata = async ({
-  connection,
-  payer,
-  tokenName,
-}: {
-  connection: Connection;
-  payer: Keypair;
-  tokenName: string;
-}) => {
-  const metaplex = Metaplex.make(connection)
-    .use(keypairIdentity(payer))
-    .use(
-      bundlrStorage({
-        address: 'https://devnet.bundlr.network',
-        providerUrl: 'https://api.devnet.solana.com',
-        timeout: 60000,
-      }),
-    );
-
-  // file to buffer
-  const buffer = fs.readFileSync('src/' + image);
-
-  // buffer to metaplex file
-  const file = toMetaplexFile(buffer, image);
-
-  // upload image and get image uri
-  const imageUri = await metaplex.storage().upload(file);
-  console.log('image uri:', imageUri);
-
-  // upload metadata and get metadata uri (off chain metadata)
-  const { uri } = await metaplex
-    .nfts()
-    .uploadMetadata({
-      name: tokenName,
-      description: 'some description could go here',
-      image: imageUri,
-    })
-    .run();
-
-  return uri;
-};
-
-export default async function main() {
-  const connection = new Connection(clusterApiUrl('devnet'), 'finalized');
+export default async function createEmbeddedNFT(inputs: CreateNFTInputs) {
+  const { payer, connection, tokenName, tokenSymbol, tokenUri } = inputs;
 
   const mint = Keypair.generate();
-  const payer = await getKeypairFromFile('~/.config/solana/id.json');
-
-  const tokenName = 'Token with embedded metadata';
-
-  const uri = await uploadOffChainMetadata({ payer, connection, tokenName });
-  console.log('metadata uri:', uri);
 
   const metadata: TokenMetadata = {
     mint: mint.publicKey,
     name: tokenName,
-    symbol: 'TWIM',
-    uri,
+    symbol: tokenSymbol,
+    uri: tokenUri,
     additionalMetadata: [['customField', 'customValue']],
   };
 
+  //TODO talk about why we're using this
   const mintLen = getMintLen([ExtensionType.MetadataPointer]);
+  //TODO Explain this
   const metadataLen = TYPE_SIZE + LENGTH_SIZE + pack(metadata).length;
   const lamports = await connection.getMinimumBalanceForRentExemption(mintLen + metadataLen);
 
@@ -212,13 +161,3 @@ export default async function main() {
     console.log('Mint off-chain metadata =====>', offChainMetadata);
   }
 }
-
-main()
-  .then(() => {
-    console.log('Finished successfully');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.log(error);
-    process.exit(1);
-  });

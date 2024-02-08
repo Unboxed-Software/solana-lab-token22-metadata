@@ -40,63 +40,30 @@ import {
 } from '@metaplex-foundation/mpl-token-metadata';
 import { createSignerFromKeypair, none, percentAmount, PublicKey, signerIdentity, Umi } from '@metaplex-foundation/umi';
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
+import { CreateNFTInputs } from './nft-helpers';
 
-const getCreateMetadataAccountOnMetaplexIxs = async ({
-  payer,
-  connection,
-  mint,
-  umi,
-}: {
-  mint: Keypair;
+
+interface CreateMetadataAccountOnMetaplexIxsInputs {
   payer: Keypair;
-  connection: web3.Connection;
+  mint: Keypair;
   umi: Umi;
-}): Promise<web3.TransactionInstruction[]> => {
+  tokenName: string,
+  tokenSymbol: string,
+  tokenUri: string,
+}
+
+async function getCreateMetadataAccountOnMetaplexIxs(
+  inputs: CreateMetadataAccountOnMetaplexIxsInputs
+): Promise<web3.TransactionInstruction[]> {
+
+  const {mint, payer, umi, tokenName, tokenSymbol, tokenUri} = inputs;
   const signer = createSignerFromKeypair(umi, fromWeb3JsKeypair(payer));
   umi.use(signerIdentity(signer, true));
 
-  const image = 'cat.jpg';
-  const tokenMetadata = {
-    name: 'metaplex metadata account',
-    symbol: 'MMA',
-  };
-
-  // Upload image and make metadata URI using metaplex
-  const metaplex = Metaplex.make(connection)
-    .use(keypairIdentity(payer))
-    .use(
-      bundlrStorage({
-        address: 'https://devnet.bundlr.network',
-        providerUrl: 'https://api.devnet.solana.com',
-        timeout: 60000,
-      }),
-    );
-
-  // file to buffer
-  const buffer = fs.readFileSync('src/' + image);
-
-  // buffer to metaplex file
-  const file = toMetaplexFile(buffer, image);
-
-  // upload image and get image uri
-  const imageUri = await metaplex.storage().upload(file);
-  console.log('image uri:', imageUri);
-
-  // upload metadata and get metadata uri (off chain metadata)
-  const { uri } = await metaplex
-    .nfts()
-    .uploadMetadata({
-      name: tokenMetadata.name,
-      description: 'some description could go here',
-      image: imageUri,
-    })
-    .run();
-
-  console.log('metadata uri:', uri);
-
   const onChainData = {
-    ...tokenMetadata,
-    uri,
+    name: tokenName,
+    symbol: tokenSymbol,
+    uri: tokenUri,
     sellerFeeBasisPoints: percentAmount(0, 2),
     creators: none<Creator[]>(),
     collection: none<Collection>(),
@@ -122,13 +89,16 @@ const getCreateMetadataAccountOnMetaplexIxs = async ({
     printSupply: none<PrintSupply>(),
   };
 
+  // Explain a bit what this is doing
   return createV1(umi, { ...accounts, ...data })
     .getInstructions()
     .map((ix) => toWeb3JsInstruction(ix));
 };
 
-const getMetadataAccountAddressOnMetaplex = (mint: Keypair) => {
+function getMetadataAccountAddressOnMetaplex(mint: Keypair){
+  //TODO look for in library
   const METAPLEX_PROGRAM_ID = new web3.PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
+
   // Metaplex drives the metadata account address (PDA) by using the following three seeds
   const seed1 = Buffer.from('metadata');
   const seed2 = METAPLEX_PROGRAM_ID.toBuffer();
@@ -137,17 +107,15 @@ const getMetadataAccountAddressOnMetaplex = (mint: Keypair) => {
   return metadataPDA;
 };
 
-const getCreateMintWithMetadataPointerIxs = async ({
-  mint,
-  payer,
-  connection,
-  decimals,
-}: {
+interface CreateMintWithMetadataPointerIxsInputs {
   mint: Keypair;
   payer: Keypair;
   connection: web3.Connection;
   decimals: number;
-}): Promise<web3.TransactionInstruction[]> => {
+}
+
+async function getCreateMintWithMetadataPointerIxs(inputs: CreateMintWithMetadataPointerIxsInputs): Promise<web3.TransactionInstruction[]> {
+  const { mint, payer, connection, decimals } = inputs;
   const metadataPDA = getMetadataAccountAddressOnMetaplex(mint);
 
   const mintLen = getMintLen([ExtensionType.MetadataPointer]);
@@ -177,16 +145,27 @@ const getCreateMintWithMetadataPointerIxs = async ({
     TOKEN_2022_PROGRAM_ID,
   );
 
-  return [createMintAccountIx, initMetadataPointerIx, initMintIx];
+
+  return [ // Explain the ordering
+    createMintAccountIx, // Why you ordered it like this
+    initMetadataPointerIx,
+    initMintIx
+  ];
 };
 
-async function main() {
-  const endpoint = clusterApiUrl('devnet');
-  const connection = new Connection(endpoint, 'finalized');
+export default async function createMetadataPointerNFT(inputs: CreateNFTInputs) {
+  const { payer, connection, tokenName, tokenSymbol, tokenUri } = inputs;
+
+  //TODO In lab describe what UMI is.
   const umi = createUmi('https://api.devnet.solana.com');
 
   const mint = Keypair.generate();
-  const payer = await getKeypairFromFile('~/.config/solana/id.json');
+  // TODO explain the new library
+
+  //TODO potentially create keypair in .env
+
+  // I want you to use this:
+  //TODO Check balance, if none, airdrop
 
   // NFT should have 0 decimals
   const decimals = 0;
@@ -201,8 +180,10 @@ async function main() {
   const metadataIxs = await getCreateMetadataAccountOnMetaplexIxs({
     payer,
     mint,
-    connection,
     umi,
+    tokenName,
+    tokenSymbol,
+    tokenUri
   });
 
   // we will need this to mint our NFT to it
@@ -270,13 +251,3 @@ async function main() {
   const offChainMetadata = await fetch(metadata.uri).then((res) => res.json());
   console.log('Mint off-chain metadata =====>', offChainMetadata);
 }
-
-main()
-  .then(() => {
-    console.log('Finished successfully');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.log(error);
-    process.exit(1);
-  });

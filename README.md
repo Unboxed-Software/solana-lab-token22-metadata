@@ -1,7 +1,7 @@
-# TS Template to run Solana scripts
+# To Get Started
 
 ### Usage
 
-1. hit `yarn`
-1. write your code inside `index.js` main functoin
-1. run the code by running `npm start` or `yarn start`
+1. `npm install` or yarn
+2. Write code in `index.js`
+3. `npm run start`
