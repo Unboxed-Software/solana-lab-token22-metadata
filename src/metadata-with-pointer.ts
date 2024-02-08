@@ -160,9 +160,7 @@ export default async function createMetadataPointerNFT(inputs: CreateNFTInputs) 
   const umi = createUmi('https://api.devnet.solana.com');
 
   const mint = Keypair.generate();
-  // TODO explain the new library
 
-  //TODO potentially create keypair in .env
 
   // I want you to use this:
   //TODO Check balance, if none, airdrop

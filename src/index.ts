@@ -27,7 +27,7 @@ async function main() {
     imagePath,
   });
 
-  await createNFTWithEmbeddedMetadata({
+  await createNFTWithMetadataPointer({
     payer,
     connection,
     tokenName,
@@ -35,7 +35,7 @@ async function main() {
     tokenUri,
   });
 
-  await createNFTWithMetadataPointer({
+  await createNFTWithEmbeddedMetadata({
     payer,
     connection,
     tokenName,
