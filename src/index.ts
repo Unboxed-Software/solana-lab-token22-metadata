@@ -6,7 +6,10 @@ import createNFTWithMetadataPointer from "./metadata-with-pointer";
 
 async function main() {
 
+
   const connection = new Connection(clusterApiUrl('devnet'), 'finalized');
+  // TODO explain the new library
+  //TODO potentially create keypair in .env
   //TODO look at this for an .env file
   const payer = await getKeypairFromFile('~/.config/solana/id.json');
 
