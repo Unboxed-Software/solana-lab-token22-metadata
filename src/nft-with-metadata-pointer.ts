@@ -1,5 +1,4 @@
 import * as web3 from '@solana/web3.js';
-import { Keypair, sendAndConfirmTransaction, SystemProgram, Transaction } from '@solana/web3.js';
 import {
   AuthorityType,
   createAssociatedTokenAccountInstruction,
@@ -32,17 +31,76 @@ import { createSignerFromKeypair, none, percentAmount, PublicKey, signerIdentity
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
 import { CreateNFTInputs } from './helpers';
 
-interface CreateMetadataAccountOnMetaplexIxsInputs {
-  payer: Keypair;
-  mint: Keypair;
+function getMetadataAccountAddressOnMetaplex(mint: web3.PublicKey) {
+  const METAPLEX_PROGRAM_ID = new web3.PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
+
+  // Metaplex drives the metadata account address (PDA) by using the following three seeds
+  const seed1 = Buffer.from('metadata');
+  const seed2 = METAPLEX_PROGRAM_ID.toBuffer();
+  const seed3 = mint.toBuffer();
+  const [metadataPDA, _bump] = web3.PublicKey.findProgramAddressSync([seed1, seed2, seed3], METAPLEX_PROGRAM_ID);
+  return metadataPDA;
+}
+
+interface CreateMintWithMetadataPointerInstructionsInputs {
+  mint: web3.Keypair;
+  payer: web3.Keypair;
+  connection: web3.Connection;
+  decimals: number;
+}
+
+async function getCreateMintWithMetadataPointerInstructions(
+  inputs: CreateMintWithMetadataPointerInstructionsInputs,
+): Promise<web3.TransactionInstruction[]> {
+  const { mint, payer, connection, decimals } = inputs;
+  const metadataPDA = getMetadataAccountAddressOnMetaplex(mint.publicKey);
+
+  const mintLen = getMintLen([ExtensionType.MetadataPointer]);
+  const lamports = await connection.getMinimumBalanceForRentExemption(mintLen);
+
+  const createMintAccountInstruction = web3.SystemProgram.createAccount({
+    fromPubkey: payer.publicKey,
+    lamports,
+    newAccountPubkey: mint.publicKey,
+    programId: TOKEN_2022_PROGRAM_ID,
+    space: mintLen,
+  });
+
+  // we will point to the metaplex metadata account, but for now it will not be there, we will have to create it later
+  const initMetadataPointerInstruction = createInitializeMetadataPointerInstruction(
+    mint.publicKey,
+    null,
+    metadataPDA,
+    TOKEN_2022_PROGRAM_ID,
+  );
+
+  const initMintInstruction = createInitializeMintInstruction(
+    mint.publicKey,
+    decimals,
+    payer.publicKey,
+    payer.publicKey,
+    TOKEN_2022_PROGRAM_ID,
+  );
+
+  return [
+    // The order here matters
+    createMintAccountInstruction, // first we need to allocate the account, and pay the rent fee
+    initMetadataPointerInstruction, // second we need to init the pointer, if you init the mint before the pointer it will return an error
+    initMintInstruction, // now we can go ahead and init the mint
+  ];
+}
+
+interface CreateMetadataAccountOnMetaplexInstructionsInputs {
+  payer: web3.Keypair;
+  mint: web3.Keypair;
   umi: Umi;
   tokenName: string;
   tokenSymbol: string;
   tokenUri: string;
 }
 
-async function getCreateMetadataAccountOnMetaplexIxs(
-  inputs: CreateMetadataAccountOnMetaplexIxsInputs,
+async function getCreateMetadataAccountOnMetaplexInstructions(
+  inputs: CreateMetadataAccountOnMetaplexInstructionsInputs,
 ): Promise<web3.TransactionInstruction[]> {
   const { mint, payer, umi, tokenName, tokenSymbol, tokenUri } = inputs;
   const signer = createSignerFromKeypair(umi, fromWeb3JsKeypair(payer));
@@ -86,83 +144,24 @@ async function getCreateMetadataAccountOnMetaplexIxs(
     .map((ix) => toWeb3JsInstruction(ix));
 }
 
-function getMetadataAccountAddressOnMetaplex(mint: Keypair) {
-  const METAPLEX_PROGRAM_ID = new web3.PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
-
-  // Metaplex drives the metadata account address (PDA) by using the following three seeds
-  const seed1 = Buffer.from('metadata');
-  const seed2 = METAPLEX_PROGRAM_ID.toBuffer();
-  const seed3 = mint.publicKey.toBuffer();
-  const [metadataPDA, _bump] = web3.PublicKey.findProgramAddressSync([seed1, seed2, seed3], METAPLEX_PROGRAM_ID);
-  return metadataPDA;
-}
-
-interface CreateMintWithMetadataPointerIxsInputs {
-  mint: Keypair;
-  payer: Keypair;
-  connection: web3.Connection;
-  decimals: number;
-}
-
-async function getCreateMintWithMetadataPointerIxs(
-  inputs: CreateMintWithMetadataPointerIxsInputs,
-): Promise<web3.TransactionInstruction[]> {
-  const { mint, payer, connection, decimals } = inputs;
-  const metadataPDA = getMetadataAccountAddressOnMetaplex(mint);
-
-  const mintLen = getMintLen([ExtensionType.MetadataPointer]);
-  const lamports = await connection.getMinimumBalanceForRentExemption(mintLen);
-
-  const createMintAccountIx = SystemProgram.createAccount({
-    fromPubkey: payer.publicKey,
-    lamports,
-    newAccountPubkey: mint.publicKey,
-    programId: TOKEN_2022_PROGRAM_ID,
-    space: mintLen,
-  });
-
-  // we will point to the metaplex metadata account, but for now it will not be there, we will have to create it later
-  const initMetadataPointerIx = createInitializeMetadataPointerInstruction(
-    mint.publicKey,
-    null,
-    metadataPDA,
-    TOKEN_2022_PROGRAM_ID,
-  );
-
-  const initMintIx = createInitializeMintInstruction(
-    mint.publicKey,
-    decimals,
-    payer.publicKey,
-    payer.publicKey,
-    TOKEN_2022_PROGRAM_ID,
-  );
-
-  return [
-    // The order here matters
-    createMintAccountIx, // first we need to allocate the account, and pay the rent fee
-    initMetadataPointerIx, // second we need to init the pointer, if you init the mint before the pointer it will return an error
-    initMintIx, // now we can go ahead and init the mint
-  ];
-}
-
-export default async function createMetadataPointerNFT(inputs: CreateNFTInputs) {
+export default async function createNFTWithMetadataPointer(inputs: CreateNFTInputs) {
   const { payer, connection, tokenName, tokenSymbol, tokenUri } = inputs;
 
   const umi = createUmi('https://api.devnet.solana.com');
 
-  const mint = Keypair.generate();
+  const mint = web3.Keypair.generate();
 
   // NFT should have 0 decimals
   const decimals = 0;
 
-  const createMintIxs = await getCreateMintWithMetadataPointerIxs({
+  const createMintInstructions = await getCreateMintWithMetadataPointerInstructions({
     payer,
     mint,
     connection,
     decimals,
   });
 
-  const metadataIxs = await getCreateMetadataAccountOnMetaplexIxs({
+  const metadataInstructions = await getCreateMetadataAccountOnMetaplexInstructions({
     payer,
     mint,
     umi,
@@ -173,7 +172,7 @@ export default async function createMetadataPointerNFT(inputs: CreateNFTInputs) 
 
   // we will need this to mint our NFT to it
   const ata = await getAssociatedTokenAddress(mint.publicKey, payer.publicKey, false, TOKEN_2022_PROGRAM_ID);
-  const createATAIx = createAssociatedTokenAccountInstruction(
+  const createATAInstruction = createAssociatedTokenAccountInstruction(
     payer.publicKey,
     ata,
     payer.publicKey,
@@ -181,7 +180,7 @@ export default async function createMetadataPointerNFT(inputs: CreateNFTInputs) 
     TOKEN_2022_PROGRAM_ID,
   );
 
-  const mintIx = createMintToCheckedInstruction(
+  const mintInstruction = createMintToCheckedInstruction(
     mint.publicKey,
     ata,
     payer.publicKey,
@@ -193,7 +192,7 @@ export default async function createMetadataPointerNFT(inputs: CreateNFTInputs) 
   );
 
   // NFTs should have no mint authority so no one can mint any more of the same NFT
-  const removeMintAuthorityIx = createSetAuthorityInstruction(
+  const removeMintAuthorityInstruction = createSetAuthorityInstruction(
     mint.publicKey,
     payer.publicKey,
     AuthorityType.MintTokens,
@@ -203,14 +202,14 @@ export default async function createMetadataPointerNFT(inputs: CreateNFTInputs) 
   );
 
   // Building and confirming the transaction
-  const transaction = new Transaction().add(
-    ...createMintIxs,
-    ...metadataIxs,
-    createATAIx,
-    mintIx,
-    removeMintAuthorityIx,
+  const transaction = new web3.Transaction().add(
+    ...createMintInstructions,
+    ...metadataInstructions,
+    createATAInstruction,
+    mintInstruction,
+    removeMintAuthorityInstruction,
   );
-  const sig = await sendAndConfirmTransaction(connection, transaction, [payer, mint]);
+  const sig = await web3.sendAndConfirmTransaction(connection, transaction, [payer, mint]);
 
   console.log(`Transaction: https://explorer.solana.com/tx/${sig}?cluster=devnet`);
 

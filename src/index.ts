@@ -1,8 +1,7 @@
 import { clusterApiUrl, Connection } from '@solana/web3.js';
-
-import createNFTWithEmbeddedMetadata from './embedded-metadata';
-import createNFTWithMetadataPointer from './metadata-with-pointer';
 import { initializeKeypair, uploadOffChainMetadata } from './helpers';
+import createNFTWithMetadataPointer from './nft-with-metadata-pointer';
+import createNFTWithEmbeddedMetadata from './nft-with-embedded-metadata';
 
 async function main() {
   const connection = new Connection(clusterApiUrl('devnet'), 'finalized');

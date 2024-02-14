@@ -1,4 +1,4 @@
-import { Keypair, sendAndConfirmTransaction, SystemProgram, Transaction } from '@solana/web3.js';
+import * as web3 from '@solana/web3.js';
 import {
   AuthorityType,
   createAssociatedTokenAccountInstruction,
@@ -24,10 +24,10 @@ import {
 } from '@solana/spl-token-metadata';
 import { CreateNFTInputs } from './helpers';
 
-export default async function createEmbeddedNFT(inputs: CreateNFTInputs) {
+export default async function createNFTWithEmbeddedMetadata(inputs: CreateNFTInputs) {
   const { payer, connection, tokenName, tokenSymbol, tokenUri } = inputs;
 
-  const mint = Keypair.generate();
+  const mint = web3.Keypair.generate();
 
   const metadata: TokenMetadata = {
     mint: mint.publicKey,
@@ -37,6 +37,9 @@ export default async function createEmbeddedNFT(inputs: CreateNFTInputs) {
     additionalMetadata: [['customField', 'customValue']],
   };
 
+  // NFT should have 0 decimals
+  const decimals = 0;
+
   // When we init the mint we need to count for all the metadata that will get stored in it so we pay the right amount of rent
   const mintLen = getMintLen([ExtensionType.MetadataPointer]);
   // Solana Token22 program needs to store some extra information other than the metadata it self in the mint account
@@ -44,10 +47,7 @@ export default async function createEmbeddedNFT(inputs: CreateNFTInputs) {
   const metadataLen = TYPE_SIZE + LENGTH_SIZE + pack(metadata).length;
   const lamports = await connection.getMinimumBalanceForRentExemption(mintLen + metadataLen);
 
-  // NFT should have 0 decimals
-  const decimals = 0;
-
-  const createMintAccountIx = SystemProgram.createAccount({
+  const createMintAccountInstruction = web3.SystemProgram.createAccount({
     fromPubkey: payer.publicKey,
     lamports,
     newAccountPubkey: mint.publicKey,
@@ -56,14 +56,14 @@ export default async function createEmbeddedNFT(inputs: CreateNFTInputs) {
   });
 
   // Even if we want to use the metadata-extension, we still need to use the metadata-pointer-extension but it will point to the mint it self
-  const initMetadataPointerIx = createInitializeMetadataPointerInstruction(
+  const initMetadataPointerInstruction = createInitializeMetadataPointerInstruction(
     mint.publicKey,
     payer.publicKey,
     mint.publicKey,
     TOKEN_2022_PROGRAM_ID,
   );
 
-  const initMintIx = createInitializeMintInstruction(
+  const initMintInstruction = createInitializeMintInstruction(
     mint.publicKey,
     decimals,
     payer.publicKey,
@@ -71,7 +71,7 @@ export default async function createEmbeddedNFT(inputs: CreateNFTInputs) {
     TOKEN_2022_PROGRAM_ID,
   );
 
-  const initMetadataIx = createInitializeInstruction({
+  const initMetadataInstruction = createInitializeInstruction({
     programId: TOKEN_2022_PROGRAM_ID,
     mint: mint.publicKey,
     metadata: mint.publicKey,
@@ -82,7 +82,7 @@ export default async function createEmbeddedNFT(inputs: CreateNFTInputs) {
     updateAuthority: payer.publicKey,
   });
 
-  const updateMetadataFieldIx = createUpdateFieldInstruction({
+  const updateMetadataFieldInstruction = createUpdateFieldInstruction({
     metadata: mint.publicKey,
     updateAuthority: payer.publicKey,
     programId: TOKEN_2022_PROGRAM_ID,
@@ -92,7 +92,7 @@ export default async function createEmbeddedNFT(inputs: CreateNFTInputs) {
 
   // we will need this to mint our NFT to it
   const ata = await getAssociatedTokenAddress(mint.publicKey, payer.publicKey, false, TOKEN_2022_PROGRAM_ID);
-  const createATAIx = createAssociatedTokenAccountInstruction(
+  const createATAInstruction = createAssociatedTokenAccountInstruction(
     payer.publicKey,
     ata,
     payer.publicKey,
@@ -112,7 +112,7 @@ export default async function createEmbeddedNFT(inputs: CreateNFTInputs) {
   );
 
   // NFTs should have no mint authority so no one can mint any more of the same NFT
-  const setMintTokenAuthorityIx = createSetAuthorityInstruction(
+  const setMintTokenAuthorityInstruction = createSetAuthorityInstruction(
     mint.publicKey,
     payer.publicKey,
     AuthorityType.MintTokens,
@@ -121,18 +121,18 @@ export default async function createEmbeddedNFT(inputs: CreateNFTInputs) {
     TOKEN_2022_PROGRAM_ID,
   );
 
-  const transaction = new Transaction().add(
-    createMintAccountIx,
+  const transaction = new web3.Transaction().add(
+    createMintAccountInstruction,
     // We should always init the metadata pointer before the mint, otherwise it will error
-    initMetadataPointerIx,
-    initMintIx,
-    initMetadataIx,
-    updateMetadataFieldIx,
-    createATAIx,
+    initMetadataPointerInstruction,
+    initMintInstruction,
+    initMetadataInstruction,
+    updateMetadataFieldInstruction,
+    createATAInstruction,
     mintIX,
-    setMintTokenAuthorityIx,
+    setMintTokenAuthorityInstruction,
   );
-  const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [payer, mint]);
+  const transactionSignature = await web3.sendAndConfirmTransaction(connection, transaction, [payer, mint]);
   console.log(`Transaction: https://explorer.solana.com/tx/${transactionSignature}?cluster=devnet`);
 
   // Now we can fetch the account and the mint and look at the details
