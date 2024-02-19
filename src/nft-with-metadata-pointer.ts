@@ -215,11 +215,11 @@ export default async function createNFTWithMetadataPointer(inputs: CreateNFTInpu
 
   // Now we can fetch the account and the mint and look at the details
 
-  // Feting the account
+  // Fetching the account
   const accountDetails = await getAccount(connection, ata, 'finalized', TOKEN_2022_PROGRAM_ID);
   console.log('Associate Token Account =====>', accountDetails);
 
-  // Feting the mint
+  // Fetching the mint
   const mintDetails = await getMint(connection, mint.publicKey, undefined, TOKEN_2022_PROGRAM_ID);
   console.log('Mint =====>', mintDetails);
 
