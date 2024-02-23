@@ -3,14 +3,35 @@ import { bundlrStorage, keypairIdentity, Metaplex, toMetaplexFile } from '@metap
 import fs from 'fs';
 import * as web3 from '@solana/web3.js';
 import dotenv from 'dotenv';
-import { getKeypairFromFile, requestAndConfirmAirdropIfRequired } from '@solana-developers/helpers';
+import { getKeypairFromFile } from '@solana-developers/helpers';
 dotenv.config();
+
+async function airdropSolIfNeeded(signer: web3.Keypair, connection: web3.Connection) {
+  const balance = await connection.getBalance(signer.publicKey);
+  console.log('Current balance is', balance / web3.LAMPORTS_PER_SOL);
+
+  if (balance < web3.LAMPORTS_PER_SOL) {
+    console.log('Airdropping 1 SOL...');
+    const airdropSignature = await connection.requestAirdrop(signer.publicKey, web3.LAMPORTS_PER_SOL);
+
+    const latestBlockHash = await connection.getLatestBlockhash();
+
+    await connection.confirmTransaction({
+      blockhash: latestBlockHash.blockhash,
+      lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+      signature: airdropSignature,
+    });
+
+    const newBalance = await connection.getBalance(signer.publicKey);
+    console.log('New balance is', newBalance / web3.LAMPORTS_PER_SOL);
+  }
+}
 
 export async function initializeKeypair(connection: web3.Connection, keyPairFilePath?: string): Promise<web3.Keypair> {
   if (keyPairFilePath) {
     const signer = await getKeypairFromFile(keyPairFilePath);
 
-    await requestAndConfirmAirdropIfRequired(connection, signer.publicKey, 2, 1);
+    await airdropSolIfNeeded(signer, connection);
 
     return signer;
   } else if (process.env.PRIVATE_KEY) {
@@ -18,7 +39,7 @@ export async function initializeKeypair(connection: web3.Connection, keyPairFile
     const secretKey = Uint8Array.from(secret);
     const keypairFromSecretKey = web3.Keypair.fromSecretKey(secretKey);
 
-    await requestAndConfirmAirdropIfRequired(connection, keypairFromSecretKey.publicKey, 2, 1);
+    await airdropSolIfNeeded(keypairFromSecretKey, connection);
 
     return keypairFromSecretKey;
   } else {
@@ -26,7 +47,7 @@ export async function initializeKeypair(connection: web3.Connection, keyPairFile
 
     const signer = web3.Keypair.generate();
     fs.writeFileSync('.env', `PRIVATE_KEY=[${signer.secretKey.toString()}]`);
-    await requestAndConfirmAirdropIfRequired(connection, signer.publicKey, 2, 1);
+    await airdropSolIfNeeded(signer, connection);
 
     return signer;
   }
