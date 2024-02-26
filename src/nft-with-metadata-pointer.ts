@@ -31,13 +31,13 @@ import { createSignerFromKeypair, none, percentAmount, PublicKey, signerIdentity
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
 import { CreateNFTInputs } from './helpers';
 
-function getMetadataAccountAddressOnMetaplex(mint: web3.PublicKey) {
+function getMetadataAccountAddressOnMetaplex(mintPublicKey: web3.PublicKey) {
   const METAPLEX_PROGRAM_ID = new web3.PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
 
   // Metaplex drives the metadata account address (PDA) by using the following three seeds
   const seed1 = Buffer.from('metadata');
   const seed2 = METAPLEX_PROGRAM_ID.toBuffer();
-  const seed3 = mint.toBuffer();
+  const seed3 = mintPublicKey.toBuffer();
   const [metadataPDA, _bump] = web3.PublicKey.findProgramAddressSync([seed1, seed2, seed3], METAPLEX_PROGRAM_ID);
   return metadataPDA;
 }
@@ -53,6 +53,7 @@ async function getCreateMintWithMetadataPointerInstructions(
   inputs: CreateMintWithMetadataPointerInstructionsInputs,
 ): Promise<web3.TransactionInstruction[]> {
   const { mint, payer, connection, decimals } = inputs;
+
   const metadataPDA = getMetadataAccountAddressOnMetaplex(mint.publicKey);
 
   const mintLen = getMintLen([ExtensionType.MetadataPointer]);
@@ -66,7 +67,7 @@ async function getCreateMintWithMetadataPointerInstructions(
     space: mintLen,
   });
 
-  // we will point to the metaplex metadata account, but for now it will not be there, we will have to create it later
+  // We will point to the Metaplex metadata account but note it doesn't exist yet
   const initMetadataPointerInstruction = createInitializeMetadataPointerInstruction(
     mint.publicKey,
     null,
@@ -103,6 +104,7 @@ async function getCreateMetadataAccountOnMetaplexInstructions(
   inputs: CreateMetadataAccountOnMetaplexInstructionsInputs,
 ): Promise<web3.TransactionInstruction[]> {
   const { mint, payer, umi, tokenName, tokenSymbol, tokenUri } = inputs;
+
   const signer = createSignerFromKeypair(umi, fromWeb3JsKeypair(payer));
   umi.use(signerIdentity(signer, true));
 
@@ -115,6 +117,7 @@ async function getCreateMetadataAccountOnMetaplexInstructions(
     collection: none<Collection>(),
     uses: none<Uses>(),
   };
+
   const accounts: CreateV1InstructionAccounts = {
     mint: createSignerFromKeypair(umi, fromWeb3JsKeypair(mint)),
     splTokenProgram: fromWeb3JsPublicKey(TOKEN_2022_PROGRAM_ID),
@@ -122,6 +125,7 @@ async function getCreateMetadataAccountOnMetaplexInstructions(
     authority: signer,
     updateAuthority: signer,
   };
+
   const data: CreateV1InstructionData = {
     ...onChainData,
     isMutable: true,
@@ -212,8 +216,6 @@ export default async function createNFTWithMetadataPointer(inputs: CreateNFTInpu
   const sig = await web3.sendAndConfirmTransaction(connection, transaction, [payer, mint]);
 
   console.log(`Transaction: https://explorer.solana.com/tx/${sig}?cluster=devnet`);
-
-  // Now we can fetch the account and the mint and look at the details
 
   // Fetching the account
   const accountDetails = await getAccount(connection, ata, 'finalized', TOKEN_2022_PROGRAM_ID);
