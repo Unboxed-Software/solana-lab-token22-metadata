@@ -1,5 +1,7 @@
 import { clusterApiUrl, Connection } from '@solana/web3.js';
-import { initializeKeypair } from './helpers';
+import { initializeKeypair } from '@solana-developers/helpers';
+import dotenv from 'dotenv';
+dotenv.config();
 
 async function main() {
   const connection = new Connection(clusterApiUrl('devnet'), 'finalized');
