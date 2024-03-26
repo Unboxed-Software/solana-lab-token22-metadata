@@ -13,7 +13,7 @@ export interface CreateNFTInputs {
   tokenName: string;
   tokenSymbol: string;
   tokenUri: string;
-  tokenAdditionalMetadata?: Record<string, string>;
+  tokenAdditionalMetadata: Record<string, string>;
 }
 
 export interface UploadOffChainMetadataInputs {
