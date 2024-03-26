@@ -54,14 +54,14 @@ export default async function createNFTWithEmbeddedMetadata(inputs: CreateNFTInp
 
     // 5. Initialize the metadata inside the mint
     const initMetadataInstruction = createInitializeInstruction({
-    programId: TOKEN_2022_PROGRAM_ID,
-    mint: mint.publicKey,
-    metadata: mint.publicKey,
-    name: metadata.name,
-    symbol: metadata.symbol,
-    uri: metadata.uri,
-    mintAuthority: payer.publicKey,
-    updateAuthority: payer.publicKey,
+        programId: TOKEN_2022_PROGRAM_ID,
+        mint: mint.publicKey,
+        metadata: mint.publicKey,
+        name: metadata.name,
+        symbol: metadata.symbol,
+        uri: metadata.uri,
+        mintAuthority: payer.publicKey,
+        updateAuthority: payer.publicKey,
     });
 
     // 6. Set the additional metadata in the mint

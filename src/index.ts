@@ -2,6 +2,8 @@ import { clusterApiUrl, Connection } from '@solana/web3.js';
 import { initializeKeypair } from '@solana-developers/helpers';
 import createNFTWithEmbeddedMetadata from './nft-with-embedded-metadata';
 import { uploadOffChainMetadata } from './helpers';
+import dotenv from 'dotenv';
+dotenv.config();
 
 async function main() {
   const connection = new Connection(clusterApiUrl('devnet'), 'finalized');
