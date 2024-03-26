@@ -34,6 +34,7 @@
     "@typescript-eslint/parser": "^6.20.0",
     "bs58": "^5.0.0",
     "dotenv": "^16.0.0",
-    "eslint": "^8.56.0"
+    "eslint": "^8.56.0",
+    "nft.storage": "^7.1.1"
   }
 }

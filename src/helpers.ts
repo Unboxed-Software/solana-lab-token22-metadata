@@ -1,6 +1,11 @@
 import { Connection, Keypair } from '@solana/web3.js';
-import { bundlrStorage, keypairIdentity, Metaplex, toMetaplexFile } from '@metaplex-foundation/js';
-import fs from 'fs';
+import { NFTStorage, File } from 'nft.storage'
+import fs from 'fs'
+import path from 'path'
+import dotenv from 'dotenv';
+dotenv.config();
+
+const NFT_STORAGE_API_KEY = process.env.NFT_STORAGE_API_KEY as string;
 
 export interface CreateNFTInputs {
   payer: Keypair;
@@ -11,52 +16,42 @@ export interface CreateNFTInputs {
 }
 
 export interface UploadOffChainMetadataInputs {
-  connection: Connection;
-  payer: Keypair;
   tokenName: string;
   tokenSymbol: string;
   tokenDescription: string;
+  tokenExternalUrl: string;
   imagePath: string;
 }
 
+async function fileFromPath(filePath: string) {
+  const content = await fs.promises.readFile(filePath)
+  return new File([content], path.basename(filePath))
+}
+
+function formatIPFSUrl(url: string) {
+  return `https://${url}.ipfs.nftstorage.link`
+}
+
 export async function uploadOffChainMetadata(inputs: UploadOffChainMetadataInputs) {
-  const { connection, payer, tokenName, tokenDescription, tokenSymbol, imagePath } = inputs;
+  const { tokenName, tokenSymbol, tokenDescription, tokenExternalUrl, imagePath } = inputs;
+  // load the file from disk
+  const image = await fileFromPath(imagePath)
 
-  // We are using metaplex API's to upload our metadata and images
-  // however this is not necessary, you can use any storage provider you want
-  // Metaplex is doing nothing special here, you just need to host the files somewhere and
-  // have a uri pointing to the metadata file
-  // if you're interested into learning a different one, look at SHDW drive
-  const metaplex = Metaplex.make(connection)
-    .use(keypairIdentity(payer))
-    .use(
-      bundlrStorage({
-        address: 'https://devnet.bundlr.network',
-        providerUrl: 'https://api.devnet.solana.com',
-        timeout: 60000,
-      }),
-    );
+  const nftstorage = new NFTStorage({ token: NFT_STORAGE_API_KEY })
 
-  // file to buffer
-  const buffer = fs.readFileSync('src/' + imagePath);
+  const imageUrl = await nftstorage.storeBlob(image);
 
-  // buffer to metaplex file
-  const file = toMetaplexFile(buffer, imagePath);
+  // NFT Standard Metadata
+  const metadata = {
+    name: tokenName,
+    symbol: tokenSymbol,
+    description: tokenDescription,
+    external_url: tokenExternalUrl,
+    image: formatIPFSUrl(imageUrl),
+  }
 
-  // upload image and get image uri
-  const imageUri = await metaplex.storage().upload(file);
-  console.log('image uri:', imageUri);
+  const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' })
+  const jsonUrl = await nftstorage.storeBlob(metadataBlob);
 
-  // upload metadata and get metadata uri (off chain metadata)
-  const { uri } = await metaplex
-    .nfts()
-    .uploadMetadata({
-      name: tokenName,
-      description: tokenDescription,
-      symbol: tokenSymbol,
-      image: imageUri,
-    })
-    .run();
-
-  return uri;
+  return formatIPFSUrl(jsonUrl);
 }
